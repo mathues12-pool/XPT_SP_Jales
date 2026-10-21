@@ -421,54 +421,119 @@ function regActor(a,tagText,md,tagBg){
   return a;
 }
 function unregActor(a){const i=actors.indexOf(a);if(i>=0)actors.splice(i,1);if(a.g.parent)a.g.parent.remove(a.g);const t=tags.indexOf(a.tag);if(t>=0)tags.splice(t,1);if(follow===a)unfollow();}
-const _cg={},_sg={},_hg={};
-const HGm=(r,tl)=>{const k=r+"_"+tl;return _hg[k]||(_hg[k]=new T.SphereGeometry(r,20,12,0,PI*2,0,tl));};
+const _cg={},_sg={},_hg={},_lg={};
+const HGm=(r,tl)=>{const k=r+"_"+tl;return _hg[k]||(_hg[k]=new T.SphereGeometry(r,24,16,0,PI*2,0,tl));};
 const CGm=(rt,rb,hh,s)=>{const k=[rt,rb,hh,s].join('_');return _cg[k]||(_cg[k]=new T.CylinderGeometry(rt,rb,hh,s||12));};
 const SGm=(r,a,b)=>{const k=[r,a,b].join('_');return _sg[k]||(_sg[k]=new T.SphereGeometry(r,a||14,b||10));};
+const LGm=(pts,seg)=>{const k=pts.join('|')+seg;return _lg[k]||(_lg[k]=new T.LatheGeometry(pts.map(p=>new T.Vector2(p[0],p[1])),seg||20));};
+const LM=(c,o)=>M(c,Object.assign({side:T.DoubleSide},o||{}));
+// funde as peças de cada parte do corpo por material (poucos draw calls por pessoa)
+function PartBuilder(){
+  const parts=new Map(),m4=new T.Matrix4(),q=new T.Quaternion(),e=new T.Euler(),v=new T.Vector3(),s=new T.Vector3();
+  return {
+    add(geo,mat,x,y,z,sx,sy,sz,rx,ry,rz){
+      e.set(rx||0,ry||0,rz||0);q.setFromEuler(e);v.set(x||0,y||0,z||0);
+      const ux=sx==null?1:sx;s.set(ux,sy==null?ux:sy,sz==null?ux:sz);m4.compose(v,q,s);
+      const g=geo.clone().applyMatrix4(m4);const k=mat.uuid;if(!parts.has(k))parts.set(k,{mat,list:[]});parts.get(k).list.push(g);
+    },
+    build(parent){
+      parts.forEach(({mat,list})=>{
+        let pc=0,ic=0;list.forEach(g=>{pc+=g.attributes.position.count;ic+=g.index?g.index.count:g.attributes.position.count;});
+        const pos=new Float32Array(pc*3),nor=new Float32Array(pc*3),uv=new Float32Array(pc*2),idx=new Uint32Array(ic);let po=0,io=0;
+        list.forEach(g=>{const n=g.attributes.position.count;pos.set(g.attributes.position.array,po*3);nor.set(g.attributes.normal.array,po*3);if(g.attributes.uv)uv.set(g.attributes.uv.array,po*2);
+          if(g.index){for(let i=0;i<g.index.count;i++)idx[io++]=g.index.array[i]+po;}else for(let i=0;i<n;i++)idx[io++]=po+i;po+=n;});
+        const bg=new T.BufferGeometry();bg.setAttribute('position',new T.BufferAttribute(pos,3));bg.setAttribute('normal',new T.BufferAttribute(nor,3));bg.setAttribute('uv',new T.BufferAttribute(uv,2));bg.setIndex(new T.BufferAttribute(idx,1));
+        const m=new T.Mesh(bg,mat);m.castShadow=true;m.receiveShadow=true;parent.add(m);
+      });
+    }
+  };
+}
+const hashStr=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;};
+const seeded=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+const HEAD_PTS=[[0.001,-0.2],[0.05,-0.195],[0.09,-0.175],[0.125,-0.14],[0.15,-0.09],[0.165,-0.03],[0.172,0.03],[0.17,0.09],[0.15,0.15],[0.11,0.19],[0.06,0.21],[0.001,0.215]];
 function makeWorker(name,role,o){
+  const rng=seeded(hashStr(String(o.seed!=null?o.seed:name))),rp=a=>a[Math.floor(rng()*a.length)];
+  const F=!!(o.female||o.longHair);
   const g=new T.Group(),body=new T.Group();body.scale.setScalar(1.3);g.add(body);
-  const F=!!o.female;
-  const skin=M(o.skin||SKIN[0],{roughness:0.55}),pants=M(o.pants||0x333c52,{roughness:0.85}),vest=M(o.keepVest?o.vest:0xff8a3d,{roughness:0.72}),
-    shirt=M(o.sleeve||0x34456a,{roughness:0.88}),hairM=M(o.hair!=null?o.hair:pick(HAIR),{roughness:0.48}),glove=M(0x2b313b,{roughness:0.8}),
-    refl=M(0xe6eaf0,{roughness:0.3,metalness:0.35}),shoe=M(0x181b20,{roughness:0.55}),dark=M(0x15171c,{roughness:0.5}),eye=M(0x1a1410,{roughness:0.3});
-  const add=(geo,mat,x,y,z,par,sx,sy,sz)=>{const m=new T.Mesh(geo,mat);m.position.set(x,y,z);if(sx)m.scale.set(sx,sy,sz);m.castShadow=m.receiveShadow=true;(par||body).add(m);return m;};
-  // pernas (pivô no quadril) + botas
-  const legs=[-1,1].map(s=>{const p=new T.Group();p.position.set(s*0.112,0.86,0);body.add(p);
-    add(CGm(0.093,0.066,0.8,10),pants,0,-0.42,0,p);
-    add(SGm(0.1,10,8),shoe,0,-0.8,0.055,p,0.95,0.62,1.8);
-    return p;});
-  // quadril, cinto, tronco, colete refletivo
-  add(CGm(F?0.215:0.2,F?0.2:0.19,0.2,16),pants,0,0.93,0,body,1,1,0.7);
-  add(CGm(0.208,0.208,0.04,16),dark,0,1.03,0,body,1,1,0.7);
-  const rt=F?0.222:0.245,rb=F?0.19:0.205;
-  add(CGm(rt,rb,0.6,18),shirt,0,1.26,0,body,1,1,0.66);
-  add(CGm(rt+0.014,rb+0.014,0.5,18),vest,0,1.28,0,body,1,1,0.66);
-  [0.16,0.38].forEach(t=>{const r=rb+(rt-rb)*t/0.6+0.026;add(CGm(r,r,0.045,18),refl,0,1.0+t,0,body,1,1,0.66);});
-  if(F)[-1,1].forEach(s=>add(SGm(0.075,10,8),vest,s*0.075,1.36,0.1,body,1,0.9,0.8));
-  add(CGm(0.058,0.064,0.1,10),skin,0,1.6,0,body);
-  add(CGm(0.1,0.112,0.05,14),shirt,0,1.565,0,body,1,1,0.9);
-  // braços (pivô no ombro) + luvas
+  const skinC=o.skin||SKIN[0],dark=skinC===SKIN[3]||skinC===SKIN[2];
+  const hairC=o.hair!=null?o.hair:rp(F?[0x1e1a17,0x3b2a20,0x5a3b22,0x8a5a2b,0xc9a15b,0x2b1d15,0x7a2e2a]:[0x1e1a17,0x2b1d15,0x3b2a20,0x5a3b22,0x8a6a3a,0xc9b27a]);
+  const style=o.hairStyle||(F?rp(['long','bun','bob','pixie','ponytail','long']):(dark&&rng()<0.45?'afro':rp(['short','pomp','buzz','short','pomp'])));
+  const eyeC=rp([0x3b2a1a,0x5a3b22,0x2e5a88,0x3f7a4a,0x6b5a2a]);
+  const jacket=!!o.keepVest;                          // blazer/jaqueta (gerente, motoristas) em vez do colete laranja
+  const outerC=jacket?o.vest:0xff8a3d;
+  const shirtC=o.sleeve!=null?o.sleeve:rp([0x34456a,0x2f4f5a,0x5a2f3f,0x3d3d46,0x4a5a78,0x2a5a7a]);
+  const pantsC=o.pants!=null?o.pants:(jacket?rp([0x3b5a8a,0x2b2f3a,0x4a4f5c]):rp([0x2b2f3a,0x3a4152,0x23262e,0x3b5a8a,0x4a4f5c]));
+  const skin=M(skinC,{roughness:0.48}),hairM=LM(hairC,{roughness:0.42}),pants=LM(pantsC,{roughness:0.82}),outer=LM(outerC,{roughness:jacket?0.6:0.72}),
+    shirt=LM(shirtC,{roughness:0.85}),shoeM=M(jacket?0x2a2320:0x181b20,{roughness:0.5}),sole=M(jacket?0xf2f2f2:0x30343c,{roughness:0.6}),beltM=M(0x15171c,{roughness:0.5}),
+    refl=M(0xe6eaf0,{roughness:0.3,metalness:0.4}),white=M(0xf7f7f5,{roughness:0.3}),irisM=M(eyeC,{roughness:0.25}),black=M(0x0b0b0e,{roughness:0.2}),
+    lipM=M(F?0xb8434f:0x9a5a52,{roughness:0.35}),brow=M(hairC,{roughness:0.6}),cuffM=LM(jacket?shirtC:outerC,{roughness:0.8});
+  // ---- tronco (quadril, cinto, camisa, colete/blazer, pescoço) ----
+  const T1=new PartBuilder();
+  const rt=F?[[0.19,1.02],[0.165,1.1],[0.19,1.26],[0.212,1.4],[0.19,1.51],[0.095,1.565],[0.065,1.6]]:[[0.195,1.02],[0.19,1.1],[0.215,1.26],[0.238,1.4],[0.205,1.51],[0.1,1.565],[0.07,1.6]];
+  const rAt=y=>{for(let i=0;i<rt.length-1;i++){const a=rt[i],b=rt[i+1];if(y>=a[1]&&y<=b[1])return a[0]+(b[0]-a[0])*(y-a[1])/(b[1]-a[1]);}return 0.2;};
+  T1.add(LGm([[0.001,0.84],[F?0.215:0.2,0.86],[F?0.23:0.215,0.92],[F?0.21:0.2,1.0],[F?0.19:0.195,1.03]]),pants,0,0,0,1,1,0.7);
+  T1.add(CGm(F?0.196:0.202,F?0.196:0.202,0.035,18),beltM,0,1.03,0,1,1,0.7);T1.add(G(0.05,0.032,0.02),refl,0,1.03,F?0.134:0.14);
+  T1.add(LGm(rt),shirt,0,0,0,1,1,0.66);
+  const k=jacket?0.022:0.012;
+  T1.add(LGm([[rAt(0.98)+k,0.98],...rt.filter(p=>p[1]>1.0&&p[1]<1.52).map(p=>[p[0]+k,p[1]]),[rAt(1.52)+k,1.52]]),outer,0,0,0,1,1,0.66);
+  if(!jacket){[0.12,0.34].forEach(t=>{const y=1.02+t,r=rAt(y)+k+0.014;T1.add(CGm(r,r,0.045,18),refl,0,y,0,1,1,0.66);});}
+  else{[-1,1].forEach(s=>T1.add(G(0.055,0.3,0.012),LM(outerC,{roughness:0.55}),s*0.07,1.36,F?0.138:0.15,1,1,1,0,0,-s*0.3));T1.add(G(0.1,0.34,0.01),shirt,0,1.36,F?0.133:0.145);}
+  if(F)[-1,1].forEach(s=>T1.add(SGm(0.075,12,10),jacket?shirt:outer,s*0.075,1.3,0.1,0.8,0.8,0.6));
+  T1.add(CGm(0.058,0.064,0.1,12),skin,0,1.6,0);T1.add(CGm(0.1,0.112,0.05,16),jacket?white:shirt,0,1.565,0,1,1,0.9);
+  T1.build(body);
+  // ---- pernas (pivô no quadril) e sapatos ----
+  const legs=[-1,1].map(s=>{const p=new T.Group();p.position.set(s*0.112,0.86,0);body.add(p);const L=new PartBuilder();
+    L.add(LGm([[0.001,0],[0.096,0],[0.09,-0.2],[0.075,-0.42],[0.066,-0.6],[0.056,-0.78],[0.001,-0.78]]),pants,0,0,0);
+    if(jacket){L.add(SGm(0.1,12,8),shoeM,0,-0.8,0.05,0.95,0.6,1.7);L.add(G(0.16,0.028,0.31),sole,0,-0.845,0.055);}
+    else{L.add(SGm(0.102,12,8),shoeM,0,-0.79,0.05,0.95,0.7,1.75);L.add(G(0.17,0.035,0.33),sole,0,-0.845,0.055);L.add(SGm(0.06,10,8),beltM,0,-0.8,0.15,1,0.55,0.8);}
+    L.build(p);return p;});
+  // ---- braços (pivô no ombro) ----
   const sx=F?0.285:0.315;
-  const arms=[-1,1].map(s=>{const p=new T.Group();p.position.set(s*sx,1.49,0);body.add(p);
-    add(SGm(0.082,12,10),shirt,0,0,0,p);
-    add(CGm(0.062,0.048,0.52,10),shirt,0,-0.27,0,p);
-    add(SGm(0.06,10,8),glove,0,-0.58,0,p,1,1.12,0.92);
-    return p;});
-  // cabeça: rosto, orelhas, cabelo (sem boné)
-  const head=new T.Group();head.position.set(0,1.745,0);body.add(head);
-  add(SGm(0.17,20,16),skin,0,0,0,head,1,1.12,1.0);
-  [-1,1].forEach(s=>{add(SGm(0.034,8,6),skin,s*0.168,-0.01,0,head,0.7,1,1);add(SGm(0.021,8,6),eye,s*0.062,0.025,0.152,head,1,1.1,0.6);add(G(0.065,0.012,0.014),hairM,s*0.062,0.07,0.155,head);});
-  add(SGm(0.027,8,6),skin,0,-0.02,0.168,head,0.9,1.2,1);
-  add(G(0.06,0.01,0.012),M(0x8a4b45,{roughness:0.5}),0,-0.075,0.152,head);
-  if(F){
-    add(HGm(0.178,PI*0.52),hairM,0,0.01,-0.012,head,1.02,1.14,1.04);
-    add(SGm(0.16,14,10),hairM,0,-0.13,-0.085,head,1.0,1.55,0.7);
-    add(SGm(0.07,10,8),hairM,0,-0.26,-0.2,head,1,1.5,1);
-  }else{
-    add(HGm(0.176,PI*0.5),hairM,0,0.014,-0.012,head,1.02,1.13,1.03);
-    [-1,1].forEach(s=>add(G(0.03,0.09,0.07),hairM,s*0.163,-0.02,-0.02,head));
-    add(G(0.3,0.05,0.04),hairM,0,0.1,0.15,head);
+  const arms=[-1,1].map(s=>{const p=new T.Group();p.position.set(s*sx,1.49,0);body.add(p);const A=new PartBuilder();
+    const sl=jacket?outer:shirt;
+    A.add(SGm(0.082,14,10),jacket?outer:outer,0,0,0);
+    A.add(LGm([[0.001,0.05],[0.075,0.04],[0.066,0],[0.06,-0.1],[0.052,-0.3],[0.047,-0.48],[0.046,-0.5],[0.001,-0.5]]),sl,0,0,0);
+    A.add(CGm(0.05,0.05,0.04,12),cuffM,0,-0.5,0);
+    A.add(SGm(0.054,12,10),skin,0,-0.58,0,1,1.18,0.85);A.add(SGm(0.022,8,6),skin,s*0.04,-0.55,0.03);
+    A.build(p);return p;});
+  // ---- cabeça: rosto, olhos, sobrancelhas, boca, cabelo, óculos, barba ----
+  const head=new T.Group();head.position.set(0,1.745,0);body.add(head);const H=new PartBuilder();
+  H.add(LGm(HEAD_PTS,28),skin,0,0,0,0.94,1,0.98);
+  [-1,1].forEach(s=>{
+    H.add(SGm(0.034,10,8),skin,s*0.165,-0.01,0,0.6,1.1,0.9);                       // orelha
+    H.add(SGm(0.036,14,10),white,s*0.066,0.026,0.15,1.1,0.85,0.45);                // olho: esclera
+    H.add(SGm(0.024,14,10),irisM,s*0.066,0.026,0.163,1,1,0.4);                      // íris
+    H.add(SGm(0.012,10,8),black,s*0.066,0.026,0.171,1,1,0.4);                       // pupila
+    H.add(SGm(0.006,6,6),white,s*0.058,0.036,0.176);                                // brilho
+    H.add(G(0.075,F?0.013:0.017,0.014),brow,s*0.066,F?0.078:0.075,0.158,1,1,1,0,0,-s*(F?0.14:0.05));   // sobrancelha
+    if(F)H.add(G(0.078,0.007,0.012),black,s*0.066,0.056,0.162);                     // cílios
+  });
+  H.add(SGm(0.024,10,8),skin,0,-0.018,0.168,1,1.35,1);H.add(SGm(0.016,8,6),skin,0,-0.04,0.172,1.5,0.8,0.9);   // nariz
+  H.add(new T.TorusGeometry(0.034,F?0.0075:0.0062,6,14,PI),lipM,0,-0.043,0.158,1,0.8,0.6,0,0,PI);                // sorriso
+  if(F)H.add(SGm(0.02,8,6),lipM,0,-0.088,0.15,1.8,0.5,0.6);
+  // cabelo: casquete que acompanha o formato da cabeça (sem "careca"), mais a parte de trás por estilo
+  const hairCap=(yb,off)=>{const pts=[];HEAD_PTS.forEach(p=>{if(p[1]>yb)pts.push([p[0]+off,p[1]+off*0.5]);});
+    let r0=0.17;for(let i=0;i<HEAD_PTS.length-1;i++){const p=HEAD_PTS[i],q=HEAD_PTS[i+1];if(yb>=p[1]&&yb<=q[1])r0=p[0]+(q[0]-p[0])*(yb-p[1])/(q[1]-p[1]);}
+    pts.unshift([r0+off,yb]);pts[pts.length-1]=[0.001,0.215+off];H.add(LGm(pts,28),hairM,0,0,0,0.94,1,0.98);};
+  const nape=()=>{const pts=[[0.172+0.012,-0.03],[0.168+0.012,0.03],[0.17+0.012,0.09]];H.add(new T.LatheGeometry(pts.map(p=>new T.Vector2(p[0],p[1])),16,PI/2,PI),hairM,0,0,0,0.94,1,0.98);};
+  if(style==='short'){hairCap(0.085,0.012);nape();[-1,1].forEach(s=>H.add(G(0.026,0.08,0.06),hairM,s*0.155,0.03,0.0));}
+  else if(style==='pomp'){hairCap(0.085,0.012);nape();H.add(SGm(0.1,14,10),hairM,-0.02,0.2,0.07,1.4,0.7,1.5,0,0,0.12);}
+  else if(style==='buzz'){hairCap(0.05,0.005);nape();}
+  else if(style==='afro'){H.add(HGm(0.25,PI*0.42),hairM,0,0.035,-0.05,1,1.02,1.02);H.add(SGm(0.2,16,12),hairM,0,0.02,-0.1,1,1.05,0.9);}
+  else if(style==='bun'){hairCap(0.08,0.012);nape();H.add(SGm(0.068,12,10),hairM,0,0.2,-0.105);}
+  else if(style==='long'){hairCap(0.08,0.012);H.add(SGm(0.17,16,12),hairM,0,-0.13,-0.085,1,1.6,0.72);[-1,1].forEach(s=>H.add(G(0.035,0.26,0.08),hairM,s*0.168,-0.07,0.0));}
+  else if(style==='bob'){hairCap(0.08,0.012);H.add(SGm(0.17,16,12),hairM,0,-0.06,-0.08,1,1.05,0.75);[-1,1].forEach(s=>H.add(G(0.04,0.17,0.1),hairM,s*0.165,-0.04,0.0));}
+  else if(style==='pixie'){hairCap(0.09,0.012);nape();H.add(SGm(0.06,10,8),hairM,0.06,0.17,0.1,1.3,0.6,1.2,0,0,0.3);}
+  else{hairCap(0.085,0.012);nape();H.add(SGm(0.055,10,8),hairM,0,-0.01,-0.2);H.add(SGm(0.05,10,8),hairM,0,-0.1,-0.24,0.9,1.5,0.9);}   // rabo de cavalo
+  if(!F){
+    const fr=rng();
+    if(fr<0.28)H.add(G(0.07,0.015,0.02),brow,0,-0.058,0.163);                                                   // bigode
+    else if(fr<0.42){H.add(G(0.07,0.015,0.02),brow,0,-0.058,0.163);H.add(G(0.03,0.05,0.02),brow,0,-0.125,0.15);}   // cavanhaque
+    else if(fr<0.52){H.add(SGm(0.14,14,10),brow,0,-0.11,0.04,1,0.62,0.9);}                                     // barba
   }
+  if(o.glasses||rng()<0.22){const gm=M(rp([0x1a1a1f,0x8a6a2a,0x2a2a33]),{roughness:0.3,metalness:0.6});
+    [-1,1].forEach(s=>{H.add(new T.TorusGeometry(0.045,0.005,8,18),gm,s*0.066,0.026,0.176);H.add(G(0.006,0.006,0.17),gm,s*0.11,0.03,0.09);});H.add(G(0.03,0.006,0.006),gm,0,0.034,0.178);}
+  H.build(head);
   const carry=new T.Mesh(G(0.5,0.4,0.48),PKGMATS[0]);carry.position.set(0,1.05,0.52);carry.castShadow=true;carry.visible=false;body.add(carry);
   return {g,body,legs,arms,carry,head,type:'worker',name,role,phase:Math.random()*6,pose:'idle',turn:10,tagY:3.5,status:'Disponível'};
 }
@@ -765,7 +830,7 @@ IND.forEach((w,i)=>w.feed=FEED[i]);
 const SORT=[['Jose','Líder',0,false],['Thais','Triagem',1,true],['Rafael','Triagem',2,false],['Daniele','Triagem',0,true],
   ['Diarista 1','Triagem',3,false],['Diarista 2','Triagem',1,true],['Diarista 3','Triagem',2,false],['Diarista 4','Triagem',0,true]]
   .map(([n,role,s,f],i)=>pw2(n,role,{vest:n==='Jose'?0x22c55e:0xff8a3d,skin:SKIN[s],female:f},7.6+(i%2)*0.8,0.6+Math.floor(i/2)*0.8,-PI/2));
-const supP=(()=>{const w=makeWorker('Simone','Gerente',{keepVest:true,vest:0xf4f6fb,sleeve:0xf4f6fb,hair:0x2b1d15,female:true,pants:0x2f3a52,skin:SKIN[1],noStripe:true});w.g.position.set(-14,FLOOR,-4);regActor(w,'Simone - Gerente','proc','rgba(238,77,45,.92)');w.home=[-14,-4];return w;})();
+const supP=(()=>{const w=makeWorker('Simone','Gerente',{keepVest:true,vest:0xf4f6fb,sleeve:0x1f2430,hair:0x2b1d15,hairStyle:'bob',female:true,pants:0x1f2430,skin:SKIN[1],noStripe:true});w.g.position.set(-14,FLOOR,-4);regActor(w,'Simone - Gerente','proc','rgba(238,77,45,.92)');w.home=[-14,-4];return w;})();
 
 // ciclo da carreta
 async function truckCycle(instant){
@@ -951,11 +1016,32 @@ async function supPLoop(){
    → motorista coloca no carro → despachante libera → carro sai
    ===================================================================== */
 const X=grpExp;
+// notebook de cada vaga: tela com a lista de pacotes da rota; pisca em verde a cada pacote registrado
+function nbTex(r){
+  const c=document.createElement('canvas');c.width=256;c.height=160;const x=c.getContext('2d');
+  x.fillStyle='#0f1b2d';x.fillRect(0,0,256,160);x.fillStyle=r.hex;x.fillRect(0,0,256,30);
+  x.fillStyle='#fff';x.font='bold 17px Arial';x.fillText('SPX · SAÍDA · '+r.name.toUpperCase(),10,21);
+  x.fillStyle='#9fb4d6';x.font='13px Arial';x.fillText('Vaga '+pad(r.i+1)+' · '+r.dest,10,50);
+  for(let i=0;i<5;i++){x.fillStyle=i%2?'#1a2a44':'#16243b';x.fillRect(8,60+i*18,240,16);x.fillStyle='#cfe0ff';x.font='11px Arial';x.fillText('BR'+rint(10000000,99999999)+'SPX',14,72+i*18);x.fillStyle='#35d07f';x.fillText('✓ lido',200,72+i*18);}
+  return new T.CanvasTexture(c);
+}
+function makeNotebook(r){
+  const g=new T.Group();g.position.set(MESAX+0.5,FLOOR+0.94,r.z);g.rotation.y=PI/2;g.scale.setScalar(1.25);X.add(g);
+  const metal=M(0xaeb4bd,{metalness:0.75,roughness:0.32}),keys=M(0x1d2129,{roughness:0.6});
+  box(0.46,0.018,0.32,metal,0,0.009,0,g);box(0.4,0.004,0.17,keys,0,0.02,0.02,g);box(0.12,0.003,0.07,0x3a4150,0,0.02,0.125,g,{noCast:true});
+  const sc=new T.Group();sc.position.set(0,0.014,-0.15);sc.rotation.x=-0.38;g.add(sc);
+  box(0.46,0.3,0.012,metal,0,0.15,0,sc);
+  const tex=nbTex(r),mat=new T.MeshStandardMaterial({map:tex,emissiveMap:tex,emissive:new T.Color(1,1,1),emissiveIntensity:0.9,roughness:0.3});
+  const scr=new T.Mesh(new T.PlaneGeometry(0.42,0.26),mat);scr.position.set(0,0.15,0.0066);sc.add(scr);
+  r.nb={g,mat};
+}
+async function nbFlash(r){const m=r.nb&&r.nb.mat;if(!m)return;m.emissive.setRGB(0.45,1,0.55);m.emissiveIntensity=2.4;await wait(0.35);m.emissive.setRGB(1,1,1);m.emissiveIntensity=0.9;}
 const routes=[];
 [-1,1].forEach(h=>{
   BAYZ.forEach((az,k)=>{
     const i=routes.length,z=h*az;
     routes.push({i,half:h,k,z,hex:RHEX[i],name:'Rota '+pad(i+1),dest:DESTS[i],sec:[null,null,null,null],car:null,claim:null,gaiDone:false});
+    makeNotebook(routes[routes.length-1]);
     frame(BAYX,z,5,2.7,0xffffff,X);
     box(5,0.02,2.6,0xdbe5f5,BAYX,FLOOR+0.025,z,X,{noCast:true});
     floorText('VAGA '+pad(i+1),BAYX-1.2,z,1.6,'#93a6c9',0,X,FLOOR+0.035);
@@ -1041,7 +1127,7 @@ async function carCycle(r,instant){
     c.state='loading';c.trunkT=1;
     // motorista desce e vai para a traseira, entre o carro e a mesa
     const s=r.half<0?1:-1,door=[-6.6,r.z+s*1.35];
-    const d=wkX('Motorista','Motorista '+c.plate,{keepVest:true,vest:pick([0x334155,0x1e3a8a,0x7c2d12,0x3f6212]),sleeve:0x475569,noStripe:true,skin:pick(SKIN),female:Math.random()<0.3},door[0],door[1],PI/2,'Motorista','rgba(71,85,105,.9)');
+    const d=wkX('Motorista','Motorista '+c.plate,{keepVest:true,seed:Math.random(),vest:pick([0x334155,0x1e3a8a,0x7c2d12,0x3f6212,0x6b4a2a,0x4a5568]),sleeve:pick([0xc2410c,0xf4f4f0,0x2f6f9f,0x7a3b3b,0x3f7a4a]),noStripe:true,skin:pick(SKIN),female:Math.random()<0.3},door[0],door[1],PI/2,'Motorista','rgba(71,85,105,.9)');
     d.status='Indo para a traseira do carro';c.driver=d;
     await moveAlong(d,[[-4.6,door[1]],[-4.5,r.z]],2.6);await turnTo(d,PI/2);
     c.driverReady=true;d.status='Aguardando a gaiola';
@@ -1076,7 +1162,7 @@ const LIB=[['Deise',-1,true,0x22c55e],['Mateus',-1,false],['Douglas',-1,false],[
   w.half=h;return w;
 });
 const kaique=wkX('Kaique','Despachante',{vest:0x2563eb,skin:SKIN[2]},-4.5,-1.0,PI);
-const supX=wkX('Simone','Gerente',{keepVest:true,vest:0xf4f6fb,sleeve:0xf4f6fb,hair:0x2b1d15,female:true,pants:0x2f3a52,skin:SKIN[1],noStripe:true},-20,-1.0,0,'Simone - Gerente','rgba(238,77,45,.92)');
+const supX=wkX('Simone','Gerente',{keepVest:true,vest:0xf4f6fb,sleeve:0x1f2430,hair:0x2b1d15,hairStyle:'bob',female:true,pants:0x1f2430,skin:SKIN[1],noStripe:true},-20,-1.0,0,'Simone - Gerente','rgba(238,77,45,.92)');
 
 // a gaiola acompanha a pessoa: puxada (atrás, pelo caminho) ou empurrada (à frente, pelo caminho planejado)
 function alongBack(tr,cur,D){let d=D;for(let i=tr.length-1;i>=0;i--){const q=tr[i],L=Math.hypot(cur[0]-q[0],cur[1]-q[1]);if(L>=d&&L>0){const t=d/L;return [cur[0]+(q[0]-cur[0])*t,cur[1]+(q[1]-cur[1])*t];}d-=L;cur=q;}return tr[0];}
@@ -1118,7 +1204,7 @@ async function libLoop(w,idx){
       await turnTo(w,-PI/2);
       const m=makePkg(r.i);X.add(m);m.position.copy(handsWorld(w));setCarry(w,false);w.pose='reach';
       const b={m,ready:false};r.sec[si]=b;
-      await flyTo(m,secPos(r,si),0.3,0.15);b.ready=true;
+      await flyTo(m,secPos(r,si),0.3,0.15);b.ready=true;nbFlash(r);
       w.pose='idle';await wait(rnd(0.05,0.45));
     }
     r.gaiDone=true;
@@ -1144,7 +1230,7 @@ async function kaiqueLoop(){
     const beam=new T.Mesh(new T.PlaneGeometry(0.9,0.04),new T.MeshBasicMaterial({color:0x3dff9a,transparent:true,opacity:.9,side:T.DoubleSide}));
     beam.position.set(-5.1,FLOOR+1.3,tz);beam.rotation.y=PI/2;X.add(beam);
     await tween(1.0,k=>{beam.position.y=FLOOR+0.8+Math.abs(Math.sin(k*PI*2))*0.6;});
-    X.remove(beam);r.car.released=true;w.pose='tablet';
+    X.remove(beam);r.car.released=true;nbFlash(r);w.pose='tablet';
     await moveAlong(w,[[-4.5,r.half*1.0]],3.4);await turnTo(w,PI);
   }
 }
