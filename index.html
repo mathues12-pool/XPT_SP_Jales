@@ -1196,9 +1196,9 @@ function buildTrees(){
     const base=pick(pal),L=[[0,2.9,0,1.35],[0.8,2.35,0.4,0.95],[-0.7,2.45,-0.5,1.0],[0.1,3.7,-0.1,0.9],[-0.4,2.6,0.8,0.85]];
     L.forEach((l,k)=>{lobes[(i+k)%3].push({x:x+l[0]*s,y:l[1]*s,z:z+l[2]*s,r:l[3]*s*rnd(0.9,1.12),c:new T.Color(base).offsetHSL(rnd(-0.015,0.015),rnd(-0.05,0.05),rnd(-0.06,0.05)).convertSRGBToLinear()});});
   });
-  trunkI.castShadow=trunkI.receiveShadow=true;city.add(trunkI);trunkI.count=n;
+  trunkI.castShadow=trunkI.receiveShadow=true;trunkI.frustumCulled=false;city.add(trunkI);trunkI.count=n;
   lobes.forEach((arr,v)=>{const im=new T.InstancedMesh(lobeG[v],fm,Math.max(1,arr.length));arr.forEach((l,i)=>{dm.position.set(l.x,l.y,l.z);dm.rotation.set(rnd(0,0.4),rnd(0,PI),0);dm.scale.set(l.r,l.r*0.92,l.r);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);im.setColorAt(i,l.c);});
-    im.castShadow=im.receiveShadow=true;city.add(im);});
+    im.castShadow=im.receiveShadow=true;im.frustumCulled=false;city.add(im);});
 }
 function buildCity(){
   DP=city;
@@ -1269,12 +1269,12 @@ function buildCity(){
       if(Math.random()<0.5)box(0.14,0.12,0.14,0x59616d,0,h+rh+0.5,0.3,g);
     }
   }
-  for(let z=-200;z<=200;z+=10.5){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-60,z,rint(7,9),8,rnd(3,3.6),PI/2,Math.abs(z)<100?1:0);}
-  for(let z=-198;z<=198;z+=12){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-74,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);}
+  for(let z=-118;z<=118;z+=10.5){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-60,z,rint(7,9),8,rnd(3,3.6),PI/2,Math.abs(z)<100?1:0);}
+  for(let z=-114;z<=114;z+=12){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-74,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);}
   box(8,0.06,420,road(8,420),-67,0.03,0,null,{noCast:true});
   // novos quarteirões de casas a oeste
-  for(let z=-198;z<=198;z+=10.5)house(-96,z,rint(7,9),8,rnd(3,3.6),PI/2,0);
-  for(let z=-196;z<=196;z+=12)house(-110,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);
+  for(let z=-114;z<=114;z+=10.5)house(-96,z,rint(7,9),8,rnd(3,3.6),PI/2,0);
+  for(let z=-114;z<=114;z+=12)house(-110,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);
   box(8,0.06,420,road(8,420),-84,0.03,0,null,{noCast:true});
   // prédios comerciais com fachada detalhada
   const facCache={};
@@ -1333,6 +1333,86 @@ function buildCity(){
   const spots=[];for(let xx=-30;xx<=90;xx+=7.5)if(Math.random()<0.55)spots.push([xx,-31-3.3,0.5*PI]);for(let xx=-30;xx<=90;xx+=7.5)if(Math.random()<0.55)spots.push([xx,31+3.3,-0.5*PI]);
   for(let zz=-140;zz<=140;zz+=9)if(Math.random()<0.35&&Math.abs(Math.abs(zz)-31)>8)spots.push([-50.2,zz,PI]);
   spots.forEach(([xx,zz,r])=>{const s=makeSedanMesh(pick(CARCOLS),true);s.g.position.set(xx,0,zz);s.g.rotation.y=r;city.add(s.g);});
+  /* ===== cidade ao redor: quarteirões completos (casas, prédios, galpões, praças), tudo em instâncias ===== */
+  (function farField(){
+    const NS=[-362,-302,-242,-182,-122,-84,-67,-46,28,100,137,184,244,304,364],EW=[-360,-300,-240,-180,-120,120,180,240,300,360],EXT=380,HALF=4;
+    [-362,-302,-242,-182,-122,184,244,304,364].forEach(x=>box(8,0.06,2*EXT,road(8,2*EXT),x,0.032,0,null,{noCast:true}));
+    [-84,-67,-46,100,137].forEach(x=>[-1,1].forEach(s=>box(8,0.06,EXT-210,road(8,EXT-210),x,0.032,s*(210+EXT)/2,null,{noCast:true})));
+    [-1,1].forEach(s=>box(8,0.06,EXT-120,road(8,EXT-120),28,0.032,s*(120+EXT)/2,null,{noCast:true}));
+    EW.forEach(z=>box(2*EXT,0.06,8,road(2*EXT,8),0,0.034,z,null,{noCast:true}));
+    const houses=[],bldg=[],whs=[],trees=[];
+    function fillBlock(x0,x1,z0,z1){
+      const w=x1-x0,d=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;if(w<9||d<9)return;
+      const r=Math.random(),mn=Math.min(w,d);
+      if(mn>=44&&r<0.16){whs.push({x:cx,z:cz,yaw:pick([0,PI/2,PI,-PI/2]),v:Math.random()<0.5?0:1});return;}
+      if(mn>=22&&r<0.5){const nx=Math.max(1,Math.floor(w/17)),nz=Math.max(1,Math.floor(d/15));
+        for(let i=0;i<nx;i++)for(let j=0;j<nz;j++)bldg.push({x:x0+(i+0.5)*w/nx,z:z0+(j+0.5)*d/nz,fl:rint(2,6),v:rint(0,2),yaw:pick([0,PI])});return;}
+      if(mn>=22&&r<0.58){for(let i=0;i<28;i++)trees.push([x0+rnd(2,w-2),z0+rnd(2,d-2),rnd(0.8,1.2)]);return;}
+      const nx=Math.max(1,Math.floor(w/10.5)),nz=Math.max(1,Math.floor(d/12));
+      for(let i=0;i<nx;i++)for(let j=0;j<nz;j++){const hx=x0+(i+0.5)*w/nx,hz=z0+(j+0.5)*d/nz;
+        houses.push({x:hx,z:hz,w:rnd(7,9),d:8,h:rnd(3,3.8),yaw:j%2?PI:0,wc:pick(WALLC),rc:pick(ROOFC)});
+        if(Math.random()<0.3)trees.push([hx+rnd(-1,1),hz+(j%2?-5.3:5.3),rnd(0.6,0.9)]);}
+    }
+    for(let i=0;i<NS.length-1;i++)for(let j=0;j<EW.length-1;j++){
+      const x0=NS[i]+HALF+0.5,x1=NS[i+1]-HALF-0.5,z0=EW[j]+HALF+0.5,z1=EW[j+1]-HALF-0.5;
+      if(x1>-118&&x0<180&&z1>-116&&z0<116)continue;   // zona detalhada perto do galpão
+      fillBlock(x0,x1,z0,z1);
+    }
+    // faixas livres dentro da zona detalhada (norte, sul e vãos entre galpões)
+    fillBlock(-39,96,-114,-80);fillBlock(-39,96,80,114);fillBlock(104,132,-9,9);fillBlock(142,170,-9,9);
+    const dm=new T.Object3D(),tc=new T.Color(),lin2=c=>tc.setHex(c).convertSRGBToLinear();
+    const add=m=>{m.castShadow=false;m.receiveShadow=false;m.frustumCulled=false;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;city.add(m);};
+    // casas
+    if(houses.length){
+      const bodyG=new T.BoxGeometry(1,1,1);bodyG.translate(0,0.5,0);
+      const rs=new T.Shape();rs.moveTo(-0.5,0);rs.lineTo(0.5,0);rs.lineTo(0,1);rs.closePath();
+      const roofG=new T.ExtrudeGeometry(rs,{depth:1,bevelEnabled:false});roofG.translate(0,0,-0.5);roofG.rotateY(PI/2);
+      const hb=new T.InstancedMesh(bodyG,new T.MeshStandardMaterial({color:0xffffff,roughness:0.92}),houses.length),hr=new T.InstancedMesh(roofG,new T.MeshStandardMaterial({color:0xffffff,roughness:0.65}),houses.length);
+      houses.forEach((o,i)=>{
+        dm.position.set(o.x,0,o.z);dm.rotation.set(0,o.yaw,0);dm.scale.set(o.w,o.h,o.d);dm.updateMatrix();hb.setMatrixAt(i,dm.matrix);hb.setColorAt(i,lin2(o.wc));
+        const rh=Math.min(o.w,o.d)*0.32;dm.position.set(o.x,o.h,o.z);dm.scale.set(o.w+0.6,rh,o.d+0.7);dm.updateMatrix();hr.setMatrixAt(i,dm.matrix);hr.setColorAt(i,lin2(o.rc));
+      });
+      add(hb);add(hr);
+    }
+    // prédios (uma malha por número de andares x fachada)
+    const WV=[[0xe5e7eb,0x6a8db3],[0xf1f5f9,0x7da2c7],[0xe7e5e4,0x5b7a99]],groups={};
+    bldg.forEach(o=>{(groups[o.fl+'_'+o.v]||(groups[o.fl+'_'+o.v]=[])).push(o);});
+    const roofM2=M(0xaab1bc,{roughness:0.95}),facM={};
+    for(const k in groups){
+      const arr=groups[k],fl=arr[0].fl,v=arr[0].v;
+      const g=new T.BoxGeometry(1,1,1);g.translate(0,0.5,0);const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*4,uv.getY(i)*fl);
+      const fm=facM[v]||(facM[v]=surf(facCanvas(WV[v][0],WV[v][1]),{rx:1,ry:1,rough:0.55,metal:0.1}));
+      const im=new T.InstancedMesh(g,[fm,fm,roofM2,roofM2,fm,fm],arr.length);
+      arr.forEach((o,i)=>{dm.position.set(o.x,0,o.z);dm.rotation.set(0,o.yaw,0);dm.scale.set(12,fl*3.2,10);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);});
+      add(im);
+    }
+    // galpões
+    const SZ=[[42,9,34],[30,9,26]],corrW=surf(TX.corrug,{color:0xd3dae3,rx:1,ry:1,rough:0.55,metal:0.25}),roofW=surf(TX.corrug,{color:0xaab2bd,rx:1,ry:1,rough:0.5,metal:0.35});
+    [0,1].forEach(v=>{
+      const arr=whs.filter(o=>o.v===v);if(!arr.length)return;
+      const [w,hh,d]=SZ[v],g=new T.BoxGeometry(w,hh,d);g.translate(0,hh/2,0);const uv=g.attributes.uv;
+      for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),su=f<2?d/2:(f>=4?w/2:w/2);uv.setXY(i,uv.getX(i)*su,uv.getY(i)*(f===2||f===3?d/2:1));}
+      const im=new T.InstancedMesh(g,[corrW,corrW,roofW,roofW,corrW,corrW],arr.length);
+      arr.forEach((o,i)=>{dm.position.set(o.x,0,o.z);dm.rotation.set(0,o.yaw,0);dm.scale.set(1,1,1);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);});
+      add(im);
+    });
+    // árvores leves
+    if(trees.length){
+      const tg=new T.CylinderGeometry(0.11,0.2,1,6);tg.translate(0,0.5,0);
+      const trunk=new T.InstancedMesh(tg,M(0x6a5239,{roughness:0.95}),trees.length),pal=[0x4d8a43,0x5a9a4b,0x68a856,0x44773c,0x7ab45f];
+      const mk=sd=>{const g=new T.IcosahedronGeometry(1,1),p=g.attributes.position,col=new Float32Array(p.count*3);
+        for(let i=0;i<p.count;i++){const y=p.getY(i),j=1+Math.sin(p.getX(i)*4+sd)*0.1;p.setXYZ(i,p.getX(i)*j,y*0.9*j,p.getZ(i)*j);const ao=0.5+0.5*(y*0.5+0.5);col[i*3]=col[i*3+1]=col[i*3+2]=ao;}
+        g.setAttribute('color',new T.BufferAttribute(col,3));g.computeVertexNormals();return g;};
+      const fm=new T.MeshStandardMaterial({color:0xffffff,roughness:0.92,vertexColors:true}),lg=[mk(1),mk(7)],lobes=[[],[]];
+      trees.forEach(([x,z,s],i)=>{
+        dm.position.set(x,0,z);dm.rotation.set(0,rnd(0,PI),0);dm.scale.set(s,s*rnd(1.3,1.8),s);dm.updateMatrix();trunk.setMatrixAt(i,dm.matrix);
+        const c=new T.Color(pick(pal)).offsetHSL(0,rnd(-0.05,0.05),rnd(-0.06,0.05)).convertSRGBToLinear();
+        [[0,2.8,0,1.3],[0.7,2.3,0.4,0.9],[-0.6,2.5,-0.4,0.95]].forEach((l,k)=>lobes[(i+k)%2].push({x:x+l[0]*s,y:l[1]*s,z:z+l[2]*s,r:l[3]*s,c}));
+      });
+      add(trunk);
+      lobes.forEach((arr,v)=>{if(!arr.length)return;const im=new T.InstancedMesh(lg[v],fm,arr.length);arr.forEach((l,i)=>{dm.position.set(l.x,l.y,l.z);dm.rotation.set(0,i,0);dm.scale.set(l.r,l.r*0.92,l.r);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);im.setColorAt(i,l.c);});add(im);});
+    }
+  })();
   buildTrees();
   DP=null;
   city.traverse(o=>{o.updateMatrix();o.matrixAutoUpdate=false;});
