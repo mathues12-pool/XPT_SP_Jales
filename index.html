@@ -374,8 +374,10 @@ function placeGai(S,g,x,z,ry,vis){
   for(const k in S)S[k].instanceMatrix.needsUpdate=true;
 }
 const GP=makeGaiSet(grpProc),GX=makeGaiSet(grpExp);
-function setGai(g){placeGai(GP,g,g.x,g.z,0,!g.away);placeGai(GX,g,g.cx,g.cz,g.cry,true);}
-GAI.forEach(setGai);
+function setGai(g){placeGai(GP,g,g.x,g.z,0,true);}                       // processamento: gaiolas sempre no lugar
+const GAIX=GAI.map(g=>Object.assign({},g,{n:rint(5,10),inc:0,away:false,cx:g.x,cz:g.z,cry:0}));
+function setGaiX(g){placeGai(GX,g,g.cx,g.cz,g.cry,true);}                 // expedição: estoque próprio, não mexe no do processamento
+GAI.forEach(setGai);GAIX.forEach(setGaiX);
 
 /* ============================== objetos ============================== */
 function makePkg(route){const m=new T.Mesh(G(0.42,0.34,0.42),pick(PKGMATS));m.castShadow=m.receiveShadow=true;m.userData.route=route;return m;}
@@ -571,8 +573,8 @@ const DESC=[];
 for(let k=0;k<4;k++)DESC.push({x:-19.5+k*2.1,z:7.0,row:1,kind:'gaylord',g:null,res:false});
 for(let k=0;k<3;k++)DESC.push({x:-11.1+k*2.1,z:7.0,row:1,kind:'sack',g:null,res:false});
 for(let k=0;k<7;k++)DESC.push({x:-19.5+k*2.1,z:9.9,row:2,kind:'gaylord',g:null,res:false});
-DESC.forEach(s=>box(1.4,0.02,1.4,s.kind==='sack'?0xe6f4d7:0xffe7a3,s.x,FLOOR+0.03,s.z,P,{noCast:true}));
-frame(-9.0,7.0,6.5,1.7,0x6cc24a,P);floorText('SACAS',-9.0,6.0,1.4,'#5c9e3e',0,P);
+DESC.forEach(s=>box(1.4,0.02,1.4,0xffe7a3,s.x,FLOOR+0.03,s.z,P,{noCast:true}));
+
 const FEED=[{x:-7.7,z:4.4,g:null,res:false},{x:-5.5,z:4.4,g:null,res:false}];
 FEED.forEach(f=>frame(f.x,f.z,1.5,1.5,0x4d86ff,P));
 const TBL_Y=FLOOR+0.9;
@@ -603,10 +605,10 @@ floorText('INDUÇÃO',-6.6,5.15,1.7,'#7c9bd6',0,P);
 const ramp=box(1.1,0.08,2.8,0x8a97ad,-11.4,FLOOR+0.22,2.2,P,{noCast:true});ramp.rotation.z=-Math.atan2(0.45,1.1);ramp.visible=false;
 const jackY=(x,z)=>(z<0.7||z>3.7)?FLOOR:x>-10.85?FLOOR:x<-11.95?0.6:FLOOR+(0.6-FLOOR)*(-10.85-x)/1.1;
 // gaylords desmontadas
-const flatPile=new T.Group();flatPile.position.set(0.7,FLOOR,4.4);P.add(flatPile);
+const flatPile=new T.Group();flatPile.position.set(2.4,FLOOR,9.7);P.add(flatPile);
 function pileAdd(){const b=box(1.25,0.05,1.25,pick([0xc4935c,0xb98a55,0xcc9d66]),rnd(-0.05,0.05),0.03+flatPile.children.length*0.055,rnd(-0.05,0.05),flatPile);b.rotation.y=rnd(-0.2,0.2);if(flatPile.children.length>14){flatPile.remove(flatPile.children[0]);flatPile.children.forEach((c,i)=>c.position.y=0.03+i*0.055);}}
 for(let i=0;i<3;i++)pileAdd();
-floorText('CAIXAS VAZIAS',0.7,3.5,2.0,'#a58a6a',0,P);
+floorText('CAIXAS VAZIAS',2.4,8.5,2.0,'#a58a6a',0,P);
 const M1SLOTS=[];[-8.2,-7.4,-6.6,-5.8,-5.0].forEach(x=>[1.25,2.15].forEach(z=>M1SLOTS.push({x,z,p:null,res:false})));
 const M2SLOTS=[];for(let l=0;l<2;l++)for(let i=0;i<6;i++)[1.05,1.7,2.35].forEach(z=>M2SLOTS.push({x:3.95+i*0.53,z,l,p:null,res:false,t:0}));
 const slotY=(s,l)=>TBL_Y+0.04+0.17+(l||0)*0.34;
@@ -933,6 +935,7 @@ async function sorterLoop(w,idx){
     P.add(p);p.position.copy(handsWorld(w));setCarry(w,false);w.pose='reach';
     await flyTo(p,new T.Vector3(g.x,FLOOR+1.6,g.z),0.35,0.2);
     P.remove(p);g.n++;g.inc--;setGai(g);w.pose='idle';
+    if(g.n>=GCAP&&!g.draining){g.draining=true;(async()=>{await wait(rnd(8,14));g.n=rint(0,2);g.draining=false;setGai(g);})();}   // gaiola cheia é recolhida e volta vazia
     await moveAlong(w,[[sx,cz(g.h)],[7.6,cz(g.h)],[7.6,1.7]],4.3);
   }
 }
@@ -1095,10 +1098,10 @@ async function libLoop(w,idx){
     if(w.breakReq){await takeBreak(w);continue;}
     const r=routes.find(r=>r.half===h&&r.car&&r.car.driverReady&&r.car.state==='loading'&&!r.claim);
     let g=null;
-    if(r){const c=GAI.filter(q=>q.route===r.i&&!q.away&&q.inc===0&&q.n>=3);if(c.length){c.sort((a,b)=>b.n-a.n);g=c[0];}}
+    if(r){const c=GAIX.filter(q=>q.route===r.i&&!q.away&&q.inc===0&&q.n>=3);if(c.length){c.sort((a,b)=>b.n-a.n);g=c[0];}}
     if(!r||!g){w.status=r?'Aguardando a gaiola da rota encher':'Aguardando motorista';w.pose='idle';
       if(!near(w,w.home[0],w.home[1]))await moveAlong(w,[[w.g.position.x,cz(h)],[w.home[0],cz(h)],w.home],3.4);await turnTo(w,PI);await wait(0.6);continue;}
-    r.claim=w;g.away=true;r.car.target=g.n;setGai(g);
+    r.claim=w;g.away=true;r.car.target=g.n;setGaiX(g);
     const xa=g.x+g.side*2.55,c=cz(h);
     w.status='Buscando gaiola · Carga '+pad(g.num);
     await moveAlong(w,[[w.g.position.x,c],[xa,c],[xa,g.z],[g.x+g.side*1.0,g.z]],3.6);
@@ -1111,7 +1114,7 @@ async function libLoop(w,idx){
     while(g.n>0){
       const si=r.sec.findIndex(b=>!b);if(si<0){await wait(0.2);continue;}
       await turnTo(w,PI/2);w.pose='reach';await wait(0.3);
-      g.n--;setGai(g);setCarry(w,PKGMATS[0]);
+      g.n--;setGaiX(g);setCarry(w,PKGMATS[0]);
       await turnTo(w,-PI/2);
       const m=makePkg(r.i);X.add(m);m.position.copy(handsWorld(w));setCarry(w,false);w.pose='reach';
       const b={m,ready:false};r.sec[si]=b;
@@ -1123,7 +1126,7 @@ async function libLoop(w,idx){
     const back=[[0.9,r.z],[0.9,c],[xa,c],[xa,g.z],[g.x+g.side*1.0,g.z]];
     w.cart={g,mode:'lead',path:back,i:0,D:1.0};w.pose='push';
     await moveAlong(w,back,2.6);
-    w.cart=null;w.pose='idle';g.away=false;g.cx=g.x;g.cz=g.z;g.cry=0;setGai(g);
+    w.cart=null;w.pose='idle';g.away=false;g.cx=g.x;g.cz=g.z;g.cry=0;setGaiX(g);(async()=>{await wait(rnd(10,18));g.n=rint(7,GCAP);setGaiX(g);})();   // reposição própria da expedição
     await moveAlong(w,[[xa,g.z],[xa,c],[w.home[0],c],w.home],3.6);
   }
 }
@@ -1201,7 +1204,7 @@ function buildCity(){
   DP=city;
   const SIDEC=0xd5dae2,CURB=0xb8c0cc,YEL=0xf2c94c,WHITE=0xf5f7fa;
   const road=(w,l)=>surf(TX.asph,{rx:w/5,ry:l/5,rough:0.92,bump:0.25,env:0.4}),paver=(w,l)=>surf(TX.paver,{rx:w/2.4,ry:l/2.4,rough:0.85,bump:0.35,env:0.5});
-  const gm=new T.Mesh(new T.PlaneGeometry(900,900),surf(TX.grass,{rx:60,ry:60,rough:1,bump:0.3,env:0.35}));gm.rotation.x=-PI/2;gm.position.y=-0.01;gm.receiveShadow=true;city.add(gm);
+  const gm=new T.Mesh(new T.PlaneGeometry(1200,1200),new T.MeshStandardMaterial({color:0xdde3ea,roughness:1,metalness:0}));gm.rotation.x=-PI/2;gm.position.y=-0.01;gm.receiveShadow=true;city.add(gm);
   box(83,0.06,54,paver(83,54),2.5,0.03,0,null,{noCast:true});
   // avenida (norte-sul), mão dupla, com calçadas
   box(10,0.06,440,road(10,440),-46,0.035,0,null,{noCast:true});
@@ -1266,9 +1269,13 @@ function buildCity(){
       if(Math.random()<0.5)box(0.14,0.12,0.14,0x59616d,0,h+rh+0.5,0.3,g);
     }
   }
-  for(let z=-118;z<=118;z+=10.5){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-60,z,rint(7,9),8,rnd(3,3.6),PI/2,1);}
-  for(let z=-114;z<=114;z+=12){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-74,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);}
-  box(8,0.06,240,road(8,240),-67,0.03,0,null,{noCast:true});
+  for(let z=-200;z<=200;z+=10.5){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-60,z,rint(7,9),8,rnd(3,3.6),PI/2,Math.abs(z)<100?1:0);}
+  for(let z=-198;z<=198;z+=12){if(Math.abs(Math.abs(z)-31)<6.5)continue;house(-74,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);}
+  box(8,0.06,420,road(8,420),-67,0.03,0,null,{noCast:true});
+  // novos quarteirões de casas a oeste
+  for(let z=-198;z<=198;z+=10.5)house(-96,z,rint(7,9),8,rnd(3,3.6),PI/2,0);
+  for(let z=-196;z<=196;z+=12)house(-110,z,rint(7,9),8,rnd(3,3.8),-PI/2,0);
+  box(8,0.06,420,road(8,420),-84,0.03,0,null,{noCast:true});
   // prédios comerciais com fachada detalhada
   const facCache={};
   function facCanvas(wall,glass){
@@ -1305,6 +1312,23 @@ function buildCity(){
     box(12,3.2,2.5,surf(TX.corrug,{color:pick([0xf8fafc,0xe5e7eb,0x93c5fd]),rx:8,ry:1,rough:0.5,metal:0.3}),0,2.1,0,g);
     box(3,2.8,2.4,pick([0x1f2937,0x7c2d12,0x334155]),-7.6,1.8,0,g);box(2.3,0.9,0.05,GLASS,-7.6,2.5,1.22,g);
     [-5,3,5].forEach(wx=>[-1,1].forEach(s=>{const w2=makeWheel(0.5,0.35);w2.position.set(wx,0.5,s*1.05);g.add(w2);}));[-7.6].forEach(wx=>[-1,1].forEach(s=>{const w2=makeWheel(0.5,0.35);w2.position.set(wx,0.5,s*1.05);g.add(w2);}));});
+  // mais galpões e prédios (leste, norte e sul)
+  function warehouse(cx,cz,w,d){
+    const g=new T.Group();g.position.set(cx,0,cz);city.add(g);
+    box(w,9,d,nw,0,4.5,0,g);box(w+1,0.4,d+1,rt,0,9.2,0,g);
+    for(let i=-1;i<=1;i++){box(0.2,3.6,4,0x8d96a3,-w/2-0.05,1.8,i*d/3.2,g);box(0.3,0.25,4.4,0x59616d,-w/2-0.1,3.75,i*d/3.2,g);}
+    [-1,1].forEach(s=>{const t=new T.Group();t.position.set(-w/2-7.5,0,s*d/3.2);g.add(t);
+      box(12,3.2,2.5,surf(TX.corrug,{color:pick([0xf8fafc,0xe5e7eb,0x93c5fd]),rx:8,ry:1,rough:0.5,metal:0.3}),0,2.1,0,t);
+      box(3,2.8,2.4,pick([0x1f2937,0x7c2d12,0x334155]),-7.6,1.8,0,t);
+      [-5,3,5,-7.6].forEach(wx=>[-1,1].forEach(q=>{const w2=makeWheel(0.5,0.35);w2.position.set(wx,0.5,q*1.05);t.add(w2);}));});
+  }
+  box(8,0.06,420,road(8,420),100,0.03,0,null,{noCast:true});
+  warehouse(118,-30,28,36);warehouse(118,30,28,36);warehouse(156,-30,28,36);warehouse(156,30,28,36);
+  box(8,0.06,420,road(8,420),137,0.03,0,null,{noCast:true});
+  box(300,0.06,8,road(300,8),60,0.03,-57,null,{noCast:true});box(300,0.06,8,road(300,8),60,0.03,57,null,{noCast:true});
+  for(let xx=-30;xx<=96;){const w=rnd(9,15);building(xx+w/2,-70,w,rnd(9,12),rnd(6,18),pick(BW),pick(BG),1);xx+=w+rnd(1.5,4);}
+  for(let xx=-30;xx<=96;){const w=rnd(8,13);if(Math.random()<0.4)house(xx+w/2,69,w,8,rnd(3,3.6),PI,0);else building(xx+w/2,70,w,rnd(9,12),rnd(5,13),pick(BW),pick(BG),-1);xx+=w+rnd(1.5,4);}
+  warehouse(118,-92,28,36);warehouse(156,-92,28,36);warehouse(118,92,28,36);warehouse(156,92,28,36);
   // carros estacionados (versão leve)
   const spots=[];for(let xx=-30;xx<=90;xx+=7.5)if(Math.random()<0.55)spots.push([xx,-31-3.3,0.5*PI]);for(let xx=-30;xx<=90;xx+=7.5)if(Math.random()<0.55)spots.push([xx,31+3.3,-0.5*PI]);
   for(let zz=-140;zz<=140;zz+=9)if(Math.random()<0.35&&Math.abs(Math.abs(zz)-31)>8)spots.push([-50.2,zz,PI]);
@@ -1558,7 +1582,7 @@ requestAnimationFrame(frameLoop);
 // depuração: avança a simulação mesmo com a aba em segundo plano
 window.__step=async function(sec){for(let t=0;t<sec;t+=0.05){simStep(0.05);for(let k=0;k<40;k++)await Promise.resolve();}actors.forEach(a=>{if(a.type==='worker')animWorker(a,1);else if(a.type==='jack')animWorker(a.driver,1);});refreshUI();if(FP.on){fpUpdate(0.016);fpTags();}else updateCam();renderer.render(scene,FP.on?pcam:cam);};
 window.__fp={get FP(){return FP;},enterFPS,exitFPS,fpCycle,pcam,fpUpdate,fpTags};
-window.__sim={cam,scene,renderer,sun,sim,actors,routes,GAI,view,DESC,FEED,M2SLOTS,cars,LIB,get truck(){return procTruck;},setMode};
+window.__sim={cam,scene,renderer,sun,sim,actors,routes,GAI,GAIX,view,DESC,FEED,M2SLOTS,cars,LIB,get truck(){return procTruck;},setMode};
 })();
 </script>
 </body>
