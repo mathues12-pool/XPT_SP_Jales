@@ -1,0 +1,7 @@
+{
+  "animations": "animations.glb",
+  "workers": [
+    { "file": "worker_01.glb", "gender": "f", "vest": "Sweater" },
+    { "file": "worker_02.glb", "gender": "m", "vest": "Shirt" }
+  ]
+}
